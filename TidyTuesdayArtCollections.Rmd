@@ -1,0 +1,70 @@
+---
+title: "Tidy Tuesday Art Collections"
+author: "Jeff Grayum"
+date: "1/14/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Loading Libraries:
+```{r}
+library(tidyverse)
+library(tidytuesdayR)
+library(ggthemes)
+library(scales)
+library(tidytext)
+```
+
+Loading our data:
+```{r}
+tuesdata <- tidytuesdayR::tt_load('2021-01-12')
+
+artists <- tuesdata$artists
+
+artwork <- tuesdata$artwork
+```
+
+
+Exploring the data:
+```{r}
+artists %>% 
+  view()
+
+artists %>%
+  count(name, sort = TRUE)
+
+artists %>%
+  filter(!is.na(yearOfBirth),
+         !is.na(yearOfDeath)) %>%
+  mutate(age = yearOfDeath - yearOfBirth) %>%
+  filter(age >= 1) %>%
+  ggplot(aes(age, fill = gender)) +
+  geom_histogram(binwidth = 5) +
+  theme_fivethirtyeight() +
+  labs(x = "Age", 
+       y = "",
+       fill = "",
+       title = "Age and gender of historical artists") +
+  theme(axis.title = element_text(),
+        text = element_text(family = "Times New Roman"))
+
+artists %>%
+  filter(!is.na(yearOfBirth)) %>%
+  mutate(birth_decade = (yearOfBirth %/% 10) * 10) %>%
+  ggplot(aes(birth_decade)) +
+  geom_bar() +
+  labs(x = "Decade of birth",
+       y = "",
+       title = "When were famous artist's born?") +
+  theme_fivethirtyeight() +
+  theme(axis.title = element_text(),
+        text = element_text(family = "Times New Roman"))
+```
+
+
+
