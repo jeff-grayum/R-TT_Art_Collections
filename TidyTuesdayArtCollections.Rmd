@@ -18,6 +18,12 @@ library(tidytuesdayR)
 library(ggthemes)
 library(scales)
 library(tidytext)
+library(tidymodels)
+#install.packages("textrecipes")
+library(textrecipes)
+#install.packages("hardhat")
+library(hardhat)
+library(doParallel)
 ```
 
 Loading our data:
@@ -39,6 +45,9 @@ artists %>%
   count(name, sort = TRUE)
 
 artists %>%
+  count(gender, sort = TRUE)
+
+artists %>%
   filter(!is.na(yearOfBirth),
          !is.na(yearOfDeath)) %>%
   mutate(age = yearOfDeath - yearOfBirth) %>%
@@ -56,7 +65,7 @@ artists %>%
 artists %>%
   filter(!is.na(yearOfBirth)) %>%
   mutate(birth_decade = (yearOfBirth %/% 10) * 10) %>%
-  ggplot(aes(birth_decade)) +
+  ggplot(aes(birth_decade, fill = gender)) +
   geom_bar() +
   labs(x = "Decade of birth",
        y = "",
@@ -64,7 +73,167 @@ artists %>%
   theme_fivethirtyeight() +
   theme(axis.title = element_text(),
         text = element_text(family = "Times New Roman"))
+
+artists %>%
+  filter(!is.na(yearOfBirth),
+                  !is.na(placeOfBirth)) %>%
+  mutate(birth_decade = (yearOfBirth %/% 10) * 10) %>%
+  count(placeOfBirth, birth_decade, sort = TRUE) %>%
+  arrange(birth_decade) %>%
+  filter(n >= 5) %>%
+  mutate(fct_reorder(placeOfBirth, n, sum)) %>%
+  ggplot(aes(birth_decade, n, fill = placeOfBirth)) +
+  geom_col() +
+  theme_fivethirtyeight() +
+  labs(x = "Birth decade",
+       y = "",
+       fill = "Place of birth",
+       title = "Artist hot spots throughout time") +
+  theme(axis.title = element_text(),
+  text = element_text(family = "Times New Roman"))
+
+artists %>%
+  filter(!is.na(placeOfBirth)) %>%
+  mutate(placeOfBirth = fct_lump_n(placeOfBirth, 18)) %>%
+  count(placeOfBirth, sort = TRUE) %>%
+  mutate(placeOfBirth = fct_reorder(placeOfBirth, n)) %>%
+  ggplot(aes(n, placeOfBirth, fill = placeOfBirth)) +
+  geom_col() +
+  labs(x= "",
+       y = "",
+       title = "Birthplace of famous artists") +
+  theme_fivethirtyeight() +
+  theme(axis.title = element_text(),
+        text = element_text(family = "Times New Roman"),
+        legend.position = "none")
+
+artists %>%
+  filter(!is.na(yearOfBirth),
+         !is.na(gender)) %>%
+  mutate(birth_decade = (yearOfBirth %/% 10) * 10) %>%
+  count(birth_decade, gender, sort = TRUE) %>%
+  ggplot(aes(birth_decade, n, color = gender)) +
+  geom_line(size = 1) +
+  labs(x = "Year of birth",
+       y = "",
+       title = "Gender differences among artists througout time",
+       color = "") +
+  theme_fivethirtyeight() +
+  theme(axis.title = element_text(),
+        text = element_text(family = "Times New Roman"))
+  
 ```
 
 
+```{r}
+artwork %>%
+  view()
+
+artwork %>%
+  mutate(artist = fct_lump(artist, 10)) %>%
+  add_count(artist) %>%
+  mutate(artist = fct_reorder(artist, n)) %>%
+  ggplot(aes(artist, n, fill = artistRole)) +
+  geom_col()
+
+artwork %>%
+  count(artist, artistRole, sort = TRUE) %>%
+  head(10) %>%
+  mutate(artist = fct_reorder(artist, n)) %>%
+  ggplot(aes(n, artist, fill = artistRole)) +
+  geom_col() +
+  labs( x = "",
+        y = "Artist",
+        title = "Most prolific artists in history",
+        fill = "Role") +
+  theme_fivethirtyeight() +
+  theme(axis.title = element_text(),
+        text = element_text(family = "Times New Roman"))
+
+artwork %>%
+  group_by(artist) %>%
+  summarize(n_pieces = n()) %>%
+  mutate(artist = fct_reorder(artist, n_pieces)) %>%
+  head(10) %>%
+  view()
+
+artwork %>%
+  count(artist, sort = TRUE)
+  
+```
+
+Now, for Julia's analysis!  Training a linearized model with text data to show the relationship between the medium of the artwork and how that changes over time.
+```{r}
+artwork %>%
+  glimpse()
+
+artwork %>%
+  count(medium, sort = TRUE)
+
+artwork %>%
+  ggplot(aes(year)) +
+  geom_histogram(alpha = 0.8, fill = "midnightblue") +
+  labs(x = "Year",
+       y = "",
+       title = "Distribution of art pieces") +
+  theme_fivethirtyeight() +
+  theme(axis.title = element_text(),
+        text = element_text(family = "Times New Roman"))  #bimodal distribution
+
+tate_df <- artwork %>%
+  filter(year >= 1750) %>%
+  select(year, medium) %>%
+  na.omit() %>%
+  arrange(year)
+
+#Let's see what the most common words in artwork$medium are.
+
+tate_df %>%
+  unnest_tokens(word, medium) %>%
+  count(word, sort = TRUE)
+```
+
+
+Let's build our model, using tidymodels.  Set seed, split, train, test.
+```{r}
+set.seed(123)
+
+art_split <- initial_split(tate_df, strata = year)
+art_train <- training(art_split)
+art_test <- testing(art_split)
+
+
+#Now we will resample the training data.
+set.seed(234)
+art_folds <- vfold_cv(art_train, strata = year)
+art_folds
+```
+
+First, some pre-processing.
+```{r}
+#Explain year, features coming from medium.  Learn from training data, apply to testing data and new data.
+
+#pre-processing recipe for this dataset of text.
+art_rec <- recipe(year ~ medium, data = art_train) %>%
+  step_tokenize(medium) %>%
+  step_stopwords(medium) %>%
+  step_tokenfilter(medium, max_tokens = 500) %>%
+  step_tfidf(medium)
+
+art_rec
+```
+
+
+```{r}
+sparse_bp <- hardhat::default_recipe_blueprint(composition = "dgCMatrix")
+
+lasso_spec <- linear_reg(penalty = tune(), mixture = 1)  %>%
+  set_engine("glmnet") 
+
+art_wf <- workflow() %>%
+  add_recipe(art_rec, blueprint = sparse_bp) %>%
+  add_model(lasso_spec)
+
+art_wf
+```
 
