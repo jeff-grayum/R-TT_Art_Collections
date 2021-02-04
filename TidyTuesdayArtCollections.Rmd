@@ -423,11 +423,13 @@ by_decade_medium <- artwork %>%
   group_by(decade = round(year, -1)) %>%
   mutate(n_artists_decade = n_distinct(artist)) %>%
   ungroup() %>%
+  mutate(medium = fct_lump(medium, 11)) %>%
   group_by(decade,
-        medium = fct_lump(medium, 11),
+        medium,
         n_artists_decade) %>%
   summarize(n = n(),
             n_artists = n_distinct(artist)) %>%
+  ungroup() %>%
   complete(decade, medium, fill = list(n = 0, n_artists = 0)) %>%
   group_by(decade) %>%
   mutate(pct = n / sum(n),
@@ -444,11 +446,160 @@ by_decade_medium %>%
   labs(x = "Decade",
        y = "Percent of artists using medium",
        fill = "Medium",
-       title = "Changes in art mediums over time") +
+       title = "Changes in art mediums over time at the Tate Museum") +
   theme_fivethirtyeight() +
   theme(axis.title = element_text(),
         text = element_text(family = "Times New Roman"),
         legend.position = "none")
 
+```
+
+Let's now look at how the size (dimensions) of the pieces have changed over time.
+```{r}
+art_work_size <- artwork %>%
+  filter(units == "mm",
+         !is.na(height),
+         !is.na(width)) %>%
+  mutate(area = (height / 1000)  * (width / 1000),
+         ratio = width / height) 
+
+#This is a lognormal distribution of area!!!
+art_work_size %>%
+  ggplot(aes(area)) +
+  geom_histogram() +
+  scale_x_log10(labels = comma) +
+  labs(x = "Area (sq meters)",
+       y = "Count",
+       title = "Size distribution of pieces in the Tate Art Museum",
+       caption = "Size distribution is lognormal.") +
+  theme_fivethirtyeight() +
+  theme(axis.title = element_text(),
+        text = element_text(family = "Times New Roman"))
+
+art_work_size %>%
+  filter(ratio > 0.2,
+         ratio < 5) %>%
+  ggplot(aes(ratio)) +
+  geom_histogram(bins = 100) +
+  scale_x_log10(labels = comma) +
+  labs(x = "Width / Height ratio (log scale)",
+       y = "Count",
+       title = "Width / height ratio distribution of pieces in the Tate Art Museum",
+       subtitle = "Orange lines show 3/4 and 4/3 aspect ratios",
+       caption = "Ratio distribution is bimodal.") +
+  theme_fivethirtyeight() +
+  theme(axis.title = element_text(),
+        text = element_text(family = "Times New Roman")) +
+  geom_vline(xintercept = c(3 / 4, 4 / 3), linetype = "dashed", color = "orange") 
+
+art_work_size %>%
+  mutate(shape = case_when(
+    ratio > 1.05 ~ "Landscape",
+    ratio < 0.95 ~ "Portrait",
+    TRUE ~ "Square"
+  )) %>%
+  count(shape,
+        decade = round(year, -1)) %>%
+  filter(decade >= 1700) %>%
+  complete(decade, shape, fill = list(n = 0)) %>%
+  group_by(decade) %>%
+  mutate(pct = n / sum(n)) %>%
+  ggplot(aes(decade, pct, fill = shape)) +
+  geom_area() +
+  labs(x = "Decade",
+       y = "# of Artwork in Tate Museum",
+       title = "How has the aspect ratios of artwork in the Tate Museum changed over time?") +
+  theme_fivethirtyeight() +
+  theme(axis.title = element_text(),
+        text = element_text(family = "Times New Roman")) 
+
+art_work_size %>%
+  group_by(decade = round(year, -1)) %>%
+  summarize(median_ratio = median(ratio),
+            median_area = median(area),
+            n = n()) %>%
+  filter(decade >= 1750) %>%
+  ggplot(aes(decade, median_ratio)) +
+  geom_line() +
+  geom_point(aes(size = n)) +
+  labs(x = "Decade",
+       y = "Median ratio",
+       title = "Changes in aspect ratio over time in Artwork Pieces in the Tate Museum",
+       size = "Sample size") +
+  theme_fivethirtyeight() +
+  theme(axis.title = element_text(),
+        text = element_text(family = "Times New Roman"))
+ 
+art_work_size %>%
+  filter(year >= 1750,
+         units == "mm",
+         !is.na(height),
+         !is.na(width)) %>%
+  group_by(decade = round(year, -1)) %>%
+  summarize(n = n(),
+            median_area = median(area)) %>%
+  complete(decade, fill = list(n = 0)) %>%
+  ggplot(aes(decade, median_area)) +
+  geom_line() +
+  geom_point()
+
+size_by_decade <- art_work_size %>%
+  group_by(decade = round(year, -1)) %>%
+  summarize(median_ratio = median(ratio),
+            median_area = median(area),
+            n = n()) %>%
+  filter(decade >= 1700)
+
+size_by_decade %>%
+  ggplot(aes(decade, median_area)) +
+  geom_line() +
+  geom_point(aes(size = n)) +
+  labs(x = "Decade",
+       y = "Median area (m ^ 2)",
+       title = "Changes in median area of art over time in the Tate Museum",
+       size = "Sample size") +
+  theme_fivethirtyeight() +
+  theme(axis.title = element_text(),
+        text = element_text(family = "Times New Roman"))
+
+art_work_size %>% #We know the distribution is lognormal from earlier!
+  mutate(decade = round(year, -1)) %>%
+  filter(decade >= 1700) %>%
+  ggplot(aes(decade, area, group = decade)) +
+  geom_boxplot() +
+  scale_y_log10(labels = comma,
+                breaks = 10 ^ seq(-3, 2)) +
+  labs(title = "Changes in the size of art pieces over time in the Tate Museum",
+       x = "Decade",
+       y = "Area (m ^ 2)") +
+  theme(axis.title = element_text(),
+        text = element_text(family = "Times New Roman"))
+  
+
+artwork_size %>%
+  filter(y = )
+  
+       
+
+
+  count(units, sort = TRUE) %>%
+  group_by(decade, fill = list(n = 0)) %>%
+  summarize
+  group_by(decade) 
+  
+```
+
+```{r}
+art_work_size %>%
+  group_by(artist) %>%
+  summarize(avg_year = mean(year, na.rm = TRUE),
+            first_year = min(year, na.rm = TRUE),
+            max_year = max(year, na.rm = TRUE),
+            n_pieces = n(),
+            median_area = median(area),
+            median_ratio = median(ratio)) %>%
+  arrange(desc(n_pieces))
+
+art_work_size
 ```
 
